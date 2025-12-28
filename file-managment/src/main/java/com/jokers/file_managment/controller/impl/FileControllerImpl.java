@@ -23,7 +23,6 @@ import java.util.Objects;
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/file-management")
-@Tag(name = "File", description = "Gestion des Fichiers")
 @Slf4j
 public class FileControllerImpl implements FileController {
 
