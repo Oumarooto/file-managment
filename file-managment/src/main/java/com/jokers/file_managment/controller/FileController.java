@@ -7,13 +7,14 @@ import org.springframework.core.io.Resource;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
 import java.util.List;
 
 public interface FileController {
 
     ResponseEntity<ApiResponse> hello();
 
-    ResponseEntity<FileEntityDto> saveFile(MultipartFile file, String description);
+    ResponseEntity<FileEntityDto> saveFile(MultipartFile file, String description) throws IOException;
     ResponseEntity<Resource> loadFileAsResource(String fileName, HttpServletRequest request);
     ResponseEntity<List<FileEntityDto>> getAllFiles();
     ResponseEntity<FileEntityDto> getFileById(Long id);

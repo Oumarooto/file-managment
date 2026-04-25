@@ -16,6 +16,7 @@ public class FileEntityMapper {
                 .deleted(fileEntity.isDeleted())
                 .uploadTime(fileEntity.getUploadTime())
                 .description(fileEntity.getDescription())
+                .checksum(fileEntity.getChecksum())
                 .build();
     }
 

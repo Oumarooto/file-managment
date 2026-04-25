@@ -43,4 +43,7 @@ public class FileEntity {
     private LocalDateTime uploadTime;
 
     private String description;
+
+    @Column(unique = true)
+    private String checksum;
 }

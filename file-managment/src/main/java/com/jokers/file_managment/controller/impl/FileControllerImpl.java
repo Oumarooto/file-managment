@@ -43,7 +43,7 @@ public class FileControllerImpl implements FileController {
     @PostMapping("/upload")
     @Operation(summary = "Upload File")
     public ResponseEntity<FileEntityDto> saveFile(@RequestParam("file") MultipartFile file,
-                                                  @RequestParam("description") String description) {
+                                                  @RequestParam("description") String description) throws IOException {
         return ResponseEntity.ok(fileService.saveFile(file, description));
     }
 

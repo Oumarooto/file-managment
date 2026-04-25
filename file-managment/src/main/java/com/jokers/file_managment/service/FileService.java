@@ -5,11 +5,12 @@ import com.jokers.file_managment.model.FileEntity;
 import org.springframework.core.io.Resource;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
 import java.util.List;
 
 public interface FileService {
 
-    FileEntityDto saveFile(MultipartFile file, String description);
+    FileEntityDto saveFile(MultipartFile file, String description) throws IOException;
     Resource loadFileAsResource(String fileName);
     List<FileEntityDto> getAllFiles();
     FileEntityDto getFileById(Long id);

@@ -19,4 +19,6 @@ public class FileEntityDto {
     private boolean deleted;
     private LocalDateTime uploadTime;
     private String description;
+    @Column(unique = true)
+    private String checksum;
 }

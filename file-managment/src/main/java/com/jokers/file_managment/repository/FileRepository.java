@@ -11,4 +11,6 @@ public interface FileRepository extends JpaRepository<FileEntity, Long> {
     List<FileEntity> findByFileNameContainsIgnoreCase(String fileName);
     List<FileEntity> findByFileType(String fileType);
     Optional<FileEntity> findByFileName(String fileName);
+    Optional<FileEntity> findByChecksum(String fileName);
+
 }

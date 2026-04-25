@@ -12,16 +12,18 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
 import org.springframework.stereotype.Service;
+import org.springframework.util.DigestUtils;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.net.MalformedURLException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
+import java.nio.file.*;
+import java.text.Normalizer;
 import java.util.List;
+import java.util.Locale;
+import java.util.Optional;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 @Service
 @Transactional
@@ -44,15 +46,29 @@ public class FileServiceImpl implements FileService {
 
 
     @Override
-    public FileEntityDto saveFile(MultipartFile file, String description){
+    public FileEntityDto saveFile(MultipartFile file, String description) throws IOException{
         log.info("Saving file {}", description);
+
+        String hash = getFileChecksum(file);
+
+        // On cherche en BDD si un fichier possède déjà ce hash
+        Optional<FileEntity> existingFile = fileRepository.findByChecksum(hash);
+
+        if (existingFile.isPresent()) {
+            // Option A : Lever une erreur
+             throw new FileAlreadyExistsException("Ce fichier a déjà été uploadé.");
+
+            // Option B : Retourner le nom du fichier existant sans uploader à nouveau
+            // return existingFile.get().getStoredName();
+        }
 
         if (file.isEmpty()) {
             throw new FileStorageException("Failed to store empty File !!!");
         }
 
         var originalFilename = file.getOriginalFilename();
-        var fileName = UUID.randomUUID() + " - " + originalFilename;
+        var cleanFileName = slugify(originalFilename);
+        var fileName = UUID.randomUUID() + "-" + cleanFileName;
 
         try {
             if (fileName.contains("..")){
@@ -69,6 +85,7 @@ public class FileServiceImpl implements FileService {
             fileEntity.setFileSize(String.valueOf(file.getSize()));
             fileEntity.setFilePath(targetLocation.toString());
             fileEntity.setDescription(description);
+            fileEntity.setChecksum(hash);
 
             return FileEntityMapper.toDto(fileRepository.save(fileEntity));
 
@@ -130,5 +147,26 @@ public class FileServiceImpl implements FileService {
                 .filter(fileEntity1 -> !fileEntity1.isDeleted())
                 .map(FileEntityMapper::toDto)
                 .toList();
+    }
+
+    private String slugify(String input) {
+        if (input == null) return "";
+
+        // 1. Séparer le nom de l'extension
+        int lastDot = input.lastIndexOf('.');
+        String name = (lastDot != -1) ? input.substring(0, lastDot) : input;
+        String extension = (lastDot != -1) ? input.substring(lastDot) : "";
+
+        // 2. Normalisation (supprime les accents : é -> e)
+        String nowhitespace = Pattern.compile("\\s+").matcher(name).replaceAll("-");
+        String normalized = Normalizer.normalize(nowhitespace, Normalizer.Form.NFD);
+        String slug = Pattern.compile("[^\\w-]").matcher(normalized).replaceAll("");
+
+        // 3. Retourne le nom nettoyé en minuscule avec son extension
+        return slug.toLowerCase(Locale.ENGLISH) + extension;
+    }
+
+    private String getFileChecksum(MultipartFile file) throws IOException{
+        return DigestUtils.md5DigestAsHex(file.getInputStream());
     }
 }
