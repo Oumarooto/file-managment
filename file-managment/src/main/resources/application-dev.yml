@@ -12,3 +12,6 @@ server:
   port: 9090  # Port pour stage
   servlet:
     context-path: /api
+
+logging:
+  destination: localhost:5000 # Envoi direct TCP pour le dev rapide

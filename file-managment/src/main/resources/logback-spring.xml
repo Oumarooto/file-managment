@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+
+    <!-- 1. Récupération des propriétés dynamiques de Spring -->
+    <springProperty scope="context" name="applicationName" source="spring.application.name" defaultValue="jokers-file-mgmt"/>
+    <springProperty scope="context" name="activeProfile" source="spring.profiles.active" defaultValue="dev"/>
+
+    <!-- Permet de définir le dossier de log via une variable d'env (ex: pour Docker/Kubernetes) -->
+    <property name="LOG_PATH" value="${LOG_PATH:-logs}"/>
+
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+
+    <!-- 2. APPENDER CONSOLE : Actif partout, mais formaté pour le texte -->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%clr(%d{yyyy-MM-dd HH:mm:ss.SSS}){faint} %clr(${LOG_LEVEL_PATTERN:-%5p}) %clr(${PID:- }){magenta} %clr(---){faint} %clr([%15.15t]){faint} %clr(%-40.40logger{39}){cyan} %clr(:){faint} %m%n${LOG_EXCEPTION_CONVERSION_WORD:-%wEx}</pattern>
+        </encoder>
+    </appender>
+
+    <!-- 3. APPENDER JSON : Optimisé pour ELK avec métadonnées d'environnement -->
+    <appender name="LOGSTASH_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_PATH}/app-json.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_PATH}/app-json.%d{yyyy-MM-dd}.log</fileNamePattern>
+            <!-- Conservation : 7 jours en dev, on pourrait monter à 30 en prod via springProfile -->
+            <maxHistory>14</maxHistory>
+        </rollingPolicy>
+
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+            <includeMdc>true</includeMdc>
+            <includeContext>true</includeContext>
+            <fieldNames>
+                <timestamp>@timestamp</timestamp>
+                <level>severity</level>
+                <thread>thread_name</thread>
+                <stackTrace>exception_stacktrace</stackTrace>
+            </fieldNames>
+
+            <!-- IMPORTANT : Injecte l'environnement (dev, stage, prod) dans chaque log -->
+            <customFields>{"app_name":"${applicationName}", "env":"${activeProfile}"}</customFields>
+        </encoder>
+    </appender>
+
+    <!-- 4. GESTION DES PROFILS (Le coeur de la flexibilité) -->
+
+    <!-- Configuration pour DEV : Logs verbeux et SQL visible -->
+    <springProfile name="dev">
+        <root level="INFO">
+            <appender-ref ref="CONSOLE" />
+            <appender-ref ref="LOGSTASH_FILE" />
+        </root>
+        <logger name="org.hibernate.SQL" level="DEBUG" />
+        <logger name="com.jokers.file_managment" level="DEBUG" />
+    </springProfile>
+
+    <!-- Configuration pour STAGE / PROD : Plus strict sur les niveaux, focus JSON -->
+    <springProfile name="stage,prod">
+        <root level="WARN">
+            <!-- En prod, on garde la console au cas où (Docker logs), mais on log en INFO pour le métier -->
+            <appender-ref ref="CONSOLE" />
+            <appender-ref ref="LOGSTASH_FILE" />
+        </root>
+        <logger name="com.jokers.file_managment" level="INFO" />
+        <!-- On ne logge pas le SQL en prod pour les perfs et la sécurité -->
+        <logger name="org.hibernate.SQL" level="OFF" />
+    </springProfile>
+
+</configuration>

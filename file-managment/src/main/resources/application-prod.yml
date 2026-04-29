@@ -23,3 +23,6 @@ server:
   port: 9292  # Port pour stage
   servlet:
     context-path: /api
+
+logging:
+  destination: logstash-service:5000 # Nom du service dans votre cluster Docker/K8s

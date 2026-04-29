@@ -7,7 +7,7 @@ spring:
       max-file-size: 20MB
       max-request-size: 20MB
   profiles:
-    active: prod
+    active: dev
   devtools:
     restart:
       enabled: false
@@ -29,3 +29,5 @@ springdoc:
     enabled: true
   swagger-ui:
     operations-sorter: alpha
+
+#http://localhost:9090/api/swagger-ui/index.html

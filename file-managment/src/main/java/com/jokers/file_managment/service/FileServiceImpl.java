@@ -9,6 +9,7 @@ import com.jokers.file_managment.model.FileEntity;
 import com.jokers.file_managment.repository.FileRepository;
 import jakarta.transaction.Transactional;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
 import org.springframework.stereotype.Service;
@@ -40,6 +41,7 @@ public class FileServiceImpl implements FileService {
         try {
             Files.createDirectories(this.fileStorageLocation);
         } catch (Exception ex) {
+            log.error("CRITICAL: Could not create upload directory at {}", this.fileStorageLocation);
             throw new FileStorageException("Could not create upload directory", ex);
         }
     }
@@ -47,30 +49,42 @@ public class FileServiceImpl implements FileService {
 
     @Override
     public FileEntityDto saveFile(MultipartFile file, String description) throws IOException{
-        log.info("Saving file {}", description);
+        //log.info("Saving file {}", description);
+
 
         String hash = getFileChecksum(file);
 
-        // On cherche en BDD si un fichier possède déjà ce hash
-        Optional<FileEntity> existingFile = fileRepository.findByChecksum(hash);
+        // --- Enrichissement MDC pour ELK ---
+        MDC.put("file_original_name", file.getOriginalFilename());
+        MDC.put("file_size", String.valueOf(file.getSize()));
+        MDC.put("file_type", file.getContentType());
+        MDC.put("file_checksum", hash);
+        MDC.put("action", "FILE_UPLOAD");
 
-        if (existingFile.isPresent()) {
-            // Option A : Lever une erreur
-             throw new FileAlreadyExistsException("Ce fichier a déjà été uploadé.");
-
-            // Option B : Retourner le nom du fichier existant sans uploader à nouveau
-            // return existingFile.get().getStoredName();
-        }
-
-        if (file.isEmpty()) {
-            throw new FileStorageException("Failed to store empty File !!!");
-        }
-
-        var originalFilename = file.getOriginalFilename();
-        var cleanFileName = slugify(originalFilename);
-        var fileName = UUID.randomUUID() + "-" + cleanFileName;
+        log.info("Starting file upload process: {}", description);
 
         try {
+            // On cherche en BDD si un fichier possède déjà ce hash
+            Optional<FileEntity> existingFile = fileRepository.findByChecksum(hash);
+
+            if (existingFile.isPresent()) {
+                // Option A : Lever une erreur
+                log.warn("Upload aborted: File already exists with checksum {}", hash);
+                throw new FileAlreadyExistsException("Ce fichier a déjà été uploadé.");
+
+                // Option B : Retourner le nom du fichier existant sans uploader à nouveau
+                // return existingFile.get().getStoredName();
+            }
+
+            if (file.isEmpty()) {
+                throw new FileStorageException("Failed to store empty File !!!");
+            }
+
+            var originalFilename = file.getOriginalFilename();
+            var cleanFileName = slugify(originalFilename);
+            var fileName = UUID.randomUUID() + "-" + cleanFileName;
+
+
             if (fileName.contains("..")){
                 throw new FileStorageException("Cannot store file with relative path outside current directory !!!" +  fileName);
             }
@@ -87,16 +101,26 @@ public class FileServiceImpl implements FileService {
             fileEntity.setDescription(description);
             fileEntity.setChecksum(hash);
 
-            return FileEntityMapper.toDto(fileRepository.save(fileEntity));
+            FileEntity saved = fileRepository.save(fileEntity);
+
+            MDC.put("file_internal_name", fileName);
+            log.info("File saved successfully. ID: {}", saved.getId());
+
+            return FileEntityMapper.toDto(saved);
 
         }catch (IOException ex) {
-            throw new FileStorageException("Failed to store file !!!" + fileName, ex);
+            log.error("IO Exception during file storage", ex);
+            throw new FileStorageException("Failed to store file !!!", ex);
+        } finally {
+            MDC.clear(); // Important : évite la pollution des logs des requêtes suivantes
         }
     }
 
     @Override
     public Resource loadFileAsResource(String fileName){
-        log.info("Loading file as Resource {}", fileName);
+        MDC.put("action", "FILE_DOWNLOAD");
+        MDC.put("file_internal_name", fileName);
+        log.info("Attempting to load resource");
 
         try {
             var filePath = this.fileStorageLocation.resolve(fileName).normalize();
@@ -105,48 +129,85 @@ public class FileServiceImpl implements FileService {
             if (resource.exists() || resource.isReadable()) {
                 return resource;
             }else {
+                log.error("Resource not found or not readable");
                 throw new FileStorageException("Could not read file !!!" + fileName);
             }
 
         } catch (MalformedURLException ex) {
+            log.error("URL Malformed for file: {}", fileName);
             throw new FileNotFoundException("File not found !!!" + fileName, ex);
+        } finally {
+            MDC.clear();
         }
     }
 
     @Override
     public List<FileEntityDto> getAllFiles(){
-        log.info("Getting all files");
-        return this.fileRepository.findAll().stream()
-                .filter(fileEntity -> !fileEntity.isDeleted())
-                .map(FileEntityMapper::toDto)
-                .toList();
+        MDC.put("action", "FILE_LIST_ALL");
+        log.info("Fetching all non-deleted files from database");
+        try{
+            List<FileEntityDto> files = this.fileRepository.findAll().stream()
+                    .filter(fileEntity -> !fileEntity.isDeleted())
+                    .map(FileEntityMapper::toDto)
+                    .toList();
+            MDC.put("result_count", String.valueOf(files.size()));
+            log.info("Successfully retrieved {} files", files.size());
+            return files;
+        } finally {
+            MDC.clear();
+        }
     }
 
     @Override
     public FileEntityDto getFileById(Long id){
-        log.info("Getting file By ID : {}", id);
-        return fileRepository.findById(id)
-                .filter(fileEntity1 -> !fileEntity1.isDeleted())
-                .map(FileEntityMapper::toDto)
-                .orElseThrow(() -> new FileNotFoundException("File not found !!!"));
+        MDC.put("action", "FILE_GET_BY_ID");
+        MDC.put("file_db_id", String.valueOf(id));
+        log.info("Fetching details for file ID: {}", id);
+
+        try{
+            return fileRepository.findById(id)
+                    .filter(fileEntity1 -> !fileEntity1.isDeleted())
+                    .map(FileEntityMapper::toDto)
+                    .orElseThrow(() -> {
+                        log.warn("File with ID {} not found or is deleted", id);
+                        return new FileNotFoundException("File not found !!!");
+                    });
+        } finally {
+            MDC.clear();
+        }
     }
 
     @Override
     public void deleteFileById(Long id){
+        MDC.put("action", "FILE_DELETE");
         log.info("Deleting file By ID : {}", id);
         FileEntity fileEntity = fileRepository.findById(id)
                 .filter(fileEntity1 -> !fileEntity1.isDeleted())
-                .orElseThrow(() -> new FileNotFoundException("File not found !!!"));
+                .orElseThrow(() ->{
+                    log.warn("Delete failed: File ID {} not found", id);
+                    return new FileNotFoundException("File not found !!!");
+                });
         fileEntity.setDeleted(true);
+        log.info("File ID {} marked as deleted", id);
+        MDC.clear();
     }
 
     @Override
     public List<FileEntityDto> searchFiles(String fileName){
-        log.info("Searching files by name : {}", fileName);
-        return fileRepository.findByFileNameContainsIgnoreCase(fileName).stream()
-                .filter(fileEntity1 -> !fileEntity1.isDeleted())
-                .map(FileEntityMapper::toDto)
-                .toList();
+        MDC.put("action", "FILE_SEARCH");
+        MDC.put("search_query", fileName);
+        log.info("Searching files containing: '{}'", fileName);
+        try {
+            List<FileEntityDto> results = fileRepository.findByFileNameContainsIgnoreCase(fileName).stream()
+                    .filter(fileEntity1 -> !fileEntity1.isDeleted())
+                    .map(FileEntityMapper::toDto)
+                    .toList();
+            MDC.put("result_count", String.valueOf(results.size()));
+            log.info("Search completed with {} results", results.size());
+            return results;
+        } finally {
+            MDC.clear();
+        }
     }
 
     private String slugify(String input) {
