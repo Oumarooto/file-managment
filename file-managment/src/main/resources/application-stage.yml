@@ -1,0 +1,18 @@
+spring:
+  datasource:
+    url: jdbc:mysql://localhost:3306/file_management_stage?createDatabaseIfNotExist=true
+    username: root
+    password: password # Utilisation de variable d'environnement
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+
+
+file:
+  upload-dir: /data/stage/uploads
+
+server:
+  port: 9191  # Port pour stage
+  servlet:
+    context-path: /api
