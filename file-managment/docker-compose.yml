@@ -1,0 +1,18 @@
+services:
+  app:
+    build: . # Utilise VOTRE Dockerfile pour le projet Java
+    depends_on:
+      - db
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:mysql://db:3306/file_management
+
+  db:
+    image: mysql:8.0 # Utilise l'IMAGE OFFICIELLE, pas de Dockerfile
+    environment:
+      - MYSQL_ROOT_PASSWORD=root
+      - MYSQL_DATABASE=password
+    volumes:
+      - mysql_data:/var/lib/mysql # Pour ne pas perdre vos données !
+
+volumes:
+  mysql_data:
