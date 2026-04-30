@@ -10,6 +10,22 @@ jobs:
   # 1. Étape de Build et Analyse Qualité
   quality-gate:
     runs-on: ubuntu-latest
+
+    # LANCEMENT DE LA BASE DE DONNÉES RÉELLE
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: medclinic
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=3
+
     steps:
       - uses: actions/checkout@v4
         with:
@@ -21,11 +37,15 @@ jobs:
           java-version: '21'
           distribution: 'temurin'
           cache: maven
-      - name: Build with Maven
-        run: mvn -B package -Dspring.profiles.active=dev --file ./file-managment/pom.xml
 
       - name: Build & Sonar Analysis
+        working-directory: ./file-managment
         env:
+          # Connexion à la base réelle lancée ci-dessus
+          SPRING_DATASOURCE_URL: jdbc:mysql://localhost:3306/medclinic
+          SPRING_DATASOURCE_USERNAME: root
+          SPRING_DATASOURCE_PASSWORD: root
+          # Paramètres Sonar
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
         run: |
@@ -55,9 +75,8 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v5
         with:
-          context: .
+          context: ./file-managment
           push: true
-          # Tag dynamique selon la branche (main -> latest/prod, develop -> dev)
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/file-mgmt:${{ github.ref_name }}
             ${{ secrets.DOCKERHUB_USERNAME }}/file-mgmt:${{ github.sha }}
